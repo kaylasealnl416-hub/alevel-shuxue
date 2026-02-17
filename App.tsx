@@ -69,6 +69,17 @@ const App: React.FC = () => {
     );
   };
 
+  const handleToggleChapter = (topics: string[]) => {
+    const allCompleted = topics.every(t => completedTopics.includes(t));
+    if (allCompleted) {
+      // If all are finished, unmark all topics in this chapter
+      setCompletedTopics(prev => prev.filter(t => !topics.includes(t)));
+    } else {
+      // Mark all topics in this chapter as finished
+      setCompletedTopics(prev => [...new Set([...prev, ...topics])]);
+    }
+  };
+
   const handleCompleteTopic = (topic: string) => {
     if (!completedTopics.includes(topic)) {
       setCompletedTopics(prev => [...prev, topic]);
@@ -129,6 +140,7 @@ const App: React.FC = () => {
               onStartQuiz={handleStartQuiz} 
               completedTopics={completedTopics} 
               onToggleTopic={handleToggleTopic} 
+              onToggleChapter={handleToggleChapter}
             />
           )}
           {view === ViewType.QUIZ && (
@@ -147,6 +159,7 @@ const App: React.FC = () => {
           )}
         </div>
 
+        {/* Fix: Replaced point.Sparkles with Sparkles icon component */}
         <div className="fixed bottom-6 right-6 p-4 bg-white rounded-full shadow-2xl border border-slate-200 flex items-center gap-2 animate-bounce cursor-help hover:bg-slate-50 transition-colors">
           <Sparkles className="text-indigo-600" size={20} />
           <span className="text-[10px] font-black text-slate-500 hidden md:inline">GEMINI ANALYTICS ACTIVE</span>

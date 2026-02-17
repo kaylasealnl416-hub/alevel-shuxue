@@ -1,7 +1,8 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Ensure initialization follows the coding guideline: Always use a named parameter for apiKey
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const getStudyPlan = async (mockGrades: string) => {
   const response = await ai.models.generateContent({

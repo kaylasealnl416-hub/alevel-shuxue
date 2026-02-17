@@ -5,7 +5,7 @@ import {
   ChevronRight, Play, Pause, Volume2, VolumeX, Maximize, 
   Book, ScrollText, Zap, ChevronDown, 
   List, MonitorPlay, Sparkles, MessageCircle, Send, X, 
-  BrainCircuit, Info, Target, FileCode, CheckCircle2, Circle
+  BrainCircuit, Info, Target, FileCode, CheckCircle2, Circle, CheckCircle
 } from 'lucide-react';
 import { COURSE_DATA } from '../constants';
 import { getTopicSummary, getTutorChatResponse, getVideoAnalysis } from '../services/geminiService';
@@ -15,6 +15,7 @@ interface CourseHubProps {
   onStartQuiz: (topic: string) => void;
   completedTopics: string[];
   onToggleTopic: (topic: string) => void;
+  onToggleChapter: (topics: string[]) => void;
 }
 
 interface VideoAnalysisData {
@@ -24,7 +25,7 @@ interface VideoAnalysisData {
   formulaVault: string[];
 }
 
-const CourseHub: React.FC<CourseHubProps> = ({ onStartQuiz, completedTopics, onToggleTopic }) => {
+const CourseHub: React.FC<CourseHubProps> = ({ onStartQuiz, completedTopics, onToggleTopic, onToggleChapter }) => {
   const [activeSub, setActiveSub] = useState('P1');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [magicSummary, setMagicSummary] = useState<{topic: string, text: string} | null>(null);
@@ -104,21 +105,35 @@ const CourseHub: React.FC<CourseHubProps> = ({ onStartQuiz, completedTopics, onT
 
       <div className="grid grid-cols-1 gap-4 overflow-y-auto pr-2 pb-20">
         {COURSE_DATA[activeSub].chapters.map((chapter) => {
-          const progress = (chapter.topics.filter(t => completedTopics.includes(t)).length / chapter.topics.length) * 100;
+          const completedCount = chapter.topics.filter(t => completedTopics.includes(t)).length;
+          const isFull = completedCount === chapter.topics.length;
+          const progress = (completedCount / chapter.topics.length) * 100;
+
           return (
-            <div key={chapter.id} className={`border rounded-xl bg-white overflow-hidden shadow-sm ${progress === 100 ? 'border-emerald-200' : 'border-slate-200'}`}>
+            <div key={chapter.id} className={`border rounded-xl bg-white overflow-hidden shadow-sm transition-all ${isFull ? 'border-emerald-200 bg-emerald-50/10' : 'border-slate-200'}`}>
               <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50" onClick={() => handleExpand(chapter)}>
                 <div className="flex items-center gap-3 flex-1">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${progress === 100 ? 'bg-emerald-100 text-emerald-600' : `${COURSE_DATA[activeSub].bg} ${COURSE_DATA[activeSub].color}`}`}>
-                    {expandedId === chapter.id ? <ChevronDown size={20}/> : (progress === 100 ? <CheckCircle2 size={20}/> : <ChevronRight size={20}/>)}
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${isFull ? 'bg-emerald-500 text-white' : `${COURSE_DATA[activeSub].bg} ${COURSE_DATA[activeSub].color}`}`}>
+                    {expandedId === chapter.id ? <ChevronDown size={20}/> : (isFull ? <CheckCircle2 size={20}/> : <ChevronRight size={20}/>)}
                   </div>
                   <div className="flex-1">
                     <div className="flex justify-between items-center mb-1">
-                      <h3 className="font-bold">{chapter.title}</h3>
-                      <span className="text-[10px] font-black text-slate-400">{Math.round(progress)}% COMPLETE</span>
+                      <h3 className={`font-bold transition-colors ${isFull ? 'text-emerald-900' : 'text-slate-800'}`}>{chapter.title}</h3>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-[10px] font-black tracking-widest ${isFull ? 'text-emerald-500' : 'text-slate-400'}`}>
+                          {isFull ? 'MASTERED' : `${Math.round(progress)}% COMPLETE`}
+                        </span>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onToggleChapter(chapter.topics); }} 
+                          className={`p-1 rounded-md transition-colors ${isFull ? 'text-emerald-600 hover:bg-emerald-100' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'}`}
+                          title={isFull ? "Mark chapter as incomplete" : "Mark all topics in chapter as complete"}
+                        >
+                          {isFull ? <CheckCircle size={18} /> : <Circle size={18} />}
+                        </button>
+                      </div>
                     </div>
                     <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div className={`h-full transition-all duration-500 ${progress === 100 ? 'bg-emerald-500' : 'bg-red-600'}`} style={{ width: `${progress}%` }}></div>
+                      <div className={`h-full transition-all duration-700 ease-in-out ${isFull ? 'bg-emerald-500' : 'bg-red-600'}`} style={{ width: `${progress}%` }}></div>
                     </div>
                   </div>
                 </div>
