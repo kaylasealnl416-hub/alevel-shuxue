@@ -1,16 +1,16 @@
+import { GoogleGenAI } from "@google/genai";
 
-import { GoogleGenAI, Type } from "@google/genai";
-
-// Helper function to lazily initialize the AI client.
-// This prevents the "White Screen" crash by ensuring we don't check for the API key
-// until we actually need to use it.
+// This modification ensures the API Key is correctly read in the Vercel web environment.
 const getAi = () => {
-  const apiKey = process.env.API_KEY;
+  // Key modification: Use import.meta.env with the VITE_ prefix for Vite-based projects.
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  
   if (!apiKey) {
-    console.error("API_KEY is missing. AI features will not work.");
+    // Updated error message for easier debugging in the browser console.
+    console.error("VITE_GEMINI_API_KEY is missing! Please check your Vercel Environment Variables.");
   }
-  // If apiKey is undefined, the SDK will throw an error when initialized.
-  // We initialize it here so the error is caught by the calling function's try/catch block.
+  
+  // Initialize the AI client.
   return new GoogleGenAI({ apiKey: apiKey });
 };
 
@@ -26,6 +26,8 @@ export const getStudyPlan = async (mockGrades: string) => {
       IMPORTANT: Use plain text only. DO NOT use Markdown formatting like **bold** or *italics*.
       Keep it under 150 words.
     `,
+    // Note: If your specific model version does not support thinkingBudget, 
+    // you can remove the config block below.
     config: { thinkingConfig: { thinkingBudget: 4000 } }
   });
   return response.text;
