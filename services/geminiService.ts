@@ -1,10 +1,21 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Ensure initialization follows the coding guideline: Always use a named parameter for apiKey
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper function to lazily initialize the AI client.
+// This prevents the "White Screen" crash by ensuring we don't check for the API key
+// until we actually need to use it.
+const getAi = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    console.error("API_KEY is missing. AI features will not work.");
+  }
+  // If apiKey is undefined, the SDK will throw an error when initialized.
+  // We initialize it here so the error is caught by the calling function's try/catch block.
+  return new GoogleGenAI({ apiKey: apiKey });
+};
 
 export const getStudyPlan = async (mockGrades: string) => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: `
@@ -21,6 +32,7 @@ export const getStudyPlan = async (mockGrades: string) => {
 };
 
 export const generateQuizQuestion = async (topic: string, difficulty: string = "Medium"): Promise<any> => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Generate a ${difficulty} difficulty multiple-choice A-Level Math question for Edexcel IAL on the topic: "${topic}". 
@@ -44,6 +56,7 @@ export const generateQuizQuestion = async (topic: string, difficulty: string = "
 };
 
 export const generateExamBatch = async (topic: string, difficulty: string = "Medium", count: number = 5): Promise<any[]> => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Generate exactly ${count} different ${difficulty} difficulty multiple-choice A-Level Math questions on: "${topic}". 
@@ -69,6 +82,7 @@ export const generateExamBatch = async (topic: string, difficulty: string = "Med
 };
 
 export const getTopicSummary = async (topic: string) => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Provide a "Magic Note" summary for A-Level Math: "${topic}". Plain text only.`,
@@ -77,6 +91,7 @@ export const getTopicSummary = async (topic: string) => {
 };
 
 export const getVideoAnalysis = async (chapterTitle: string, topics: string[]) => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Analyze educational content for "${chapterTitle}" topics: ${topics.join(', ')}. Format JSON.`,
@@ -98,6 +113,7 @@ export const getVideoAnalysis = async (chapterTitle: string, topics: string[]) =
 };
 
 export const getTutorChatResponse = async (topic: string, history: any[], userMessage: string) => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Topic: ${topic}. User: ${userMessage}. Tutor reply (plain text).`,
@@ -106,6 +122,7 @@ export const getTutorChatResponse = async (topic: string, history: any[], userMe
 };
 
 export const getDeepDiveExplanation = async (question: string, correctAnswer: string) => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: `Explain A-Level Math question: "${question}". Correct answer: "${correctAnswer}". Step-by-step logic. Plain text.`,
@@ -115,6 +132,7 @@ export const getDeepDiveExplanation = async (question: string, correctAnswer: st
 };
 
 export const getDiagnosticReport = async (mistakes: any[]) => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: `Analyze these Math mistakes: ${JSON.stringify(mistakes)}. Root cause report in plain text.`,
@@ -123,6 +141,7 @@ export const getDiagnosticReport = async (mistakes: any[]) => {
 };
 
 export const getDailyWisdom = async () => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: "1-sentence motivational math wisdom. No markdown.",
@@ -131,6 +150,7 @@ export const getDailyWisdom = async () => {
 };
 
 export const generateMockPaper = async (paperTitle: string) => {
+  const ai = getAi();
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: `Mock exam paper for "${paperTitle}". JSON format.`,
