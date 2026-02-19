@@ -1,176 +1,115 @@
-import { GoogleGenAI } from "@google/genai";
+const getApiKey = () => import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
 
-// This modification ensures the API Key is correctly read in the Vercel web environment.
-const getAi = () => {
-  // Key modification: Use import.meta.env with the VITE_ prefix for Vite-based projects.
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  
+const getApiUrl = (model: string, apiKey: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+const requestGemini = async <T = string>(model: string, prompt: string, expectsJson = false): Promise<T> => {
+  const apiKey = getApiKey();
   if (!apiKey) {
-    // Updated error message for easier debugging in the browser console.
-    console.error("VITE_GEMINI_API_KEY is missing! Please check your Vercel Environment Variables.");
+    throw new Error("Missing Gemini API key. Set VITE_GEMINI_API_KEY (recommended) or GEMINI_API_KEY.");
   }
-  
-  // Initialize the AI client.
-  return new GoogleGenAI({ apiKey: apiKey });
+
+  const response = await fetch(getApiUrl(model, apiKey), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: expectsJson ? { responseMimeType: "application/json" } : undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API request failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error("Gemini API returned an empty response.");
+  }
+
+  if (!expectsJson) return text as T;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Gemini JSON parse failed. Raw response: ${text}`);
+  }
 };
 
-export const getStudyPlan = async (mockGrades: string) => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
-    contents: `
-      Act as a strict but encouraging LSE admissions tutor.
-      Current Performance: ${mockGrades}
-      Target: LSE Economics (Requires A*A*A*).
-      Create a high-yield 3-day revision schedule focusing on fixing weaknesses.
-      IMPORTANT: Use plain text only. DO NOT use Markdown formatting like **bold** or *italics*.
-      Keep it under 150 words.
-    `,
-    // Note: If your specific model version does not support thinkingBudget, 
-    // you can remove the config block below.
-    config: { thinkingConfig: { thinkingBudget: 4000 } }
-  });
-  return response.text;
-};
+export const getStudyPlan = async (mockGrades: string) =>
+  requestGemini<string>(
+    "gemini-2.0-flash",
+    `Act as a strict but encouraging LSE admissions tutor.
+Current Performance: ${mockGrades}
+Target: LSE Economics (Requires A*A*A*).
+Create a high-yield 3-day revision schedule focusing on fixing weaknesses.
+IMPORTANT: Use plain text only. DO NOT use Markdown formatting.
+Keep it under 150 words.`
+  );
 
-export const generateQuizQuestion = async (topic: string, difficulty: string = "Medium"): Promise<any> => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Generate a ${difficulty} difficulty multiple-choice A-Level Math question for Edexcel IAL on the topic: "${topic}". 
-    Format as JSON. Ensure the 'answer' is the full text of the correct option. 
-    IMPORTANT: No LaTeX symbols like '$' or Markdown symbols like '*'.`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          question: { type: Type.STRING },
-          options: { type: Type.ARRAY, items: { type: Type.STRING } },
-          answer: { type: Type.STRING },
-          explanation: { type: Type.STRING }
-        },
-        required: ["question", "options", "answer", "explanation"]
-      }
-    }
-  });
-  return JSON.parse(response.text || '{}');
-};
+export const generateQuizQuestion = async (topic: string, difficulty: string = "Medium") =>
+  requestGemini<any>(
+    "gemini-2.0-flash",
+    `Generate a ${difficulty} difficulty multiple-choice A-Level Math question for Edexcel IAL on "${topic}".
+Return JSON with keys: question, options (string[]), answer, explanation.
+IMPORTANT: No LaTeX and no Markdown.`,
+    true
+  );
 
-export const generateExamBatch = async (topic: string, difficulty: string = "Medium", count: number = 5): Promise<any[]> => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Generate exactly ${count} different ${difficulty} difficulty multiple-choice A-Level Math questions on: "${topic}". 
-    Format as a JSON array.`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            question: { type: Type.STRING },
-            options: { type: Type.ARRAY, items: { type: Type.STRING } },
-            answer: { type: Type.STRING },
-            explanation: { type: Type.STRING }
-          },
-          required: ["question", "options", "answer", "explanation"]
-        }
-      }
-    }
-  });
-  return JSON.parse(response.text || '[]');
-};
+export const generateExamBatch = async (topic: string, difficulty: string = "Medium", count: number = 5) =>
+  requestGemini<any[]>(
+    "gemini-2.0-flash",
+    `Generate exactly ${count} different ${difficulty} A-Level Math multiple-choice questions on "${topic}".
+Return a JSON array. Each item must have question, options (string[]), answer, explanation.`,
+    true
+  );
 
-export const getTopicSummary = async (topic: string) => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Provide a "Magic Note" summary for A-Level Math: "${topic}". Plain text only.`,
-  });
-  return response.text;
-};
+export const getTopicSummary = async (topic: string) =>
+  requestGemini<string>("gemini-2.0-flash", `Provide a plain-text "Magic Note" summary for A-Level Math: "${topic}".`);
 
-export const getVideoAnalysis = async (chapterTitle: string, topics: string[]) => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Analyze educational content for "${chapterTitle}" topics: ${topics.join(', ')}. Format JSON.`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          synopsis: { type: Type.STRING },
-          knowledgePoints: { type: Type.ARRAY, items: { type: Type.STRING } },
-          examinerTips: { type: Type.ARRAY, items: { type: Type.STRING } },
-          formulaVault: { type: Type.ARRAY, items: { type: Type.STRING } }
-        },
-        required: ["synopsis", "knowledgePoints", "examinerTips", "formulaVault"]
-      }
-    }
-  });
-  return JSON.parse(response.text || '{}');
-};
+export const getVideoAnalysis = async (chapterTitle: string, topics: string[]) =>
+  requestGemini<any>(
+    "gemini-2.0-flash",
+    `Analyze educational content for "${chapterTitle}" with topics: ${topics.join(", ")}.
+Return JSON with keys: synopsis, knowledgePoints (string[]), examinerTips (string[]), formulaVault (string[]).`,
+    true
+  );
 
-export const getTutorChatResponse = async (topic: string, history: any[], userMessage: string) => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Topic: ${topic}. User: ${userMessage}. Tutor reply (plain text).`,
-  });
-  return response.text;
-};
+export const getTutorChatResponse = async (topic: string, history: any[], userMessage: string) =>
+  requestGemini<string>(
+    "gemini-2.0-flash",
+    `You are an A-Level Math tutor.
+Topic: ${topic}
+Conversation history: ${JSON.stringify(history)}
+User message: ${userMessage}
+Reply in concise plain text.`
+  );
 
-export const getDeepDiveExplanation = async (question: string, correctAnswer: string) => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
-    contents: `Explain A-Level Math question: "${question}". Correct answer: "${correctAnswer}". Step-by-step logic. Plain text.`,
-    config: { thinkingConfig: { thinkingBudget: 2000 } }
-  });
-  return response.text;
-};
+export const getDeepDiveExplanation = async (question: string, correctAnswer: string) =>
+  requestGemini<string>(
+    "gemini-2.0-flash",
+    `Explain this A-Level Math question step by step:
+Question: ${question}
+Correct answer: ${correctAnswer}
+Use clear plain text and no markdown.`
+  );
 
-export const getDiagnosticReport = async (mistakes: any[]) => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
-    contents: `Analyze these Math mistakes: ${JSON.stringify(mistakes)}. Root cause report in plain text.`,
-  });
-  return response.text;
-};
+export const getDiagnosticReport = async (mistakes: any[]) =>
+  requestGemini<string>(
+    "gemini-2.0-flash",
+    `Analyze these A-Level Math mistakes and provide a root cause report in plain text:
+${JSON.stringify(mistakes)}`
+  );
 
-export const getDailyWisdom = async () => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: "1-sentence motivational math wisdom. No markdown.",
-  });
-  return response.text;
-};
+export const getDailyWisdom = async () =>
+  requestGemini<string>("gemini-2.0-flash", "Give one motivational math sentence. Plain text only.");
 
-export const generateMockPaper = async (paperTitle: string) => {
-  const ai = getAi();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
-    contents: `Mock exam paper for "${paperTitle}". JSON format.`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            number: { type: Type.NUMBER },
-            text: { type: Type.STRING },
-            marks: { type: Type.NUMBER },
-            parts: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { label: { type: Type.STRING }, text: { type: Type.STRING }, marks: { type: Type.NUMBER } } } }
-          }
-        }
-      }
-    }
-  });
-  return JSON.parse(response.text || '[]');
-};
+export const generateMockPaper = async (paperTitle: string) =>
+  requestGemini<any[]>(
+    "gemini-2.0-flash",
+    `Create a mock exam paper for "${paperTitle}".
+Return a JSON array. Each item should have: number (number), text (string), marks (number), and optional parts (array of {label, text, marks}).`,
+    true
+  );
