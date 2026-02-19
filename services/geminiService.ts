@@ -3,7 +3,22 @@ const getApiKey = () => import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.G
 const getApiUrl = (model: string, apiKey: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-const requestGemini = async <T = string>(model: string, prompt: string, expectsJson = false): Promise<T> => {
+type GeminiSchema = Record<string, unknown>;
+type GeminiValidator<T> = (value: unknown) => value is T;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const hasStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+const requestGemini = async <T = string>(
+  model: string,
+  prompt: string,
+  expectsJson = false,
+  responseSchema?: GeminiSchema,
+  validator?: GeminiValidator<T>
+): Promise<T> => {
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error("Missing Gemini API key. Set VITE_GEMINI_API_KEY (recommended) or GEMINI_API_KEY.");
@@ -14,7 +29,12 @@ const requestGemini = async <T = string>(model: string, prompt: string, expectsJ
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: expectsJson ? { responseMimeType: "application/json" } : undefined,
+      generationConfig: expectsJson
+        ? {
+            responseMimeType: "application/json",
+            ...(responseSchema ? { responseSchema } : {}),
+          }
+        : undefined,
     }),
   });
 
@@ -31,12 +51,122 @@ const requestGemini = async <T = string>(model: string, prompt: string, expectsJ
 
   if (!expectsJson) return text as T;
 
+  let parsed: unknown;
   try {
-    return JSON.parse(text) as T;
+    parsed = JSON.parse(text);
   } catch {
     throw new Error(`Gemini JSON parse failed. Raw response: ${text}`);
   }
+
+  if (validator && !validator(parsed)) {
+    throw new Error(`Gemini JSON validation failed. Raw response: ${text}`);
+  }
+
+  return parsed as T;
 };
+
+const quizQuestionSchema: GeminiSchema = {
+  type: "OBJECT",
+  required: ["question", "options", "answer", "explanation"],
+  properties: {
+    question: { type: "STRING" },
+    options: {
+      type: "ARRAY",
+      minItems: 2,
+      items: { type: "STRING" },
+    },
+    answer: { type: "STRING" },
+    explanation: { type: "STRING" },
+  },
+};
+
+const examBatchSchema: GeminiSchema = {
+  type: "ARRAY",
+  minItems: 1,
+  items: quizQuestionSchema,
+};
+
+const videoAnalysisSchema: GeminiSchema = {
+  type: "OBJECT",
+  required: ["synopsis", "knowledgePoints", "examinerTips", "formulaVault"],
+  properties: {
+    synopsis: { type: "STRING" },
+    knowledgePoints: { type: "ARRAY", items: { type: "STRING" } },
+    examinerTips: { type: "ARRAY", items: { type: "STRING" } },
+    formulaVault: { type: "ARRAY", items: { type: "STRING" } },
+  },
+};
+
+const mockPaperQuestionSchema: GeminiSchema = {
+  type: "OBJECT",
+  required: ["number", "text", "marks"],
+  properties: {
+    number: { type: "NUMBER" },
+    text: { type: "STRING" },
+    marks: { type: "NUMBER" },
+    parts: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        required: ["label", "text", "marks"],
+        properties: {
+          label: { type: "STRING" },
+          text: { type: "STRING" },
+          marks: { type: "NUMBER" },
+        },
+      },
+    },
+  },
+};
+
+const isQuizQuestion = (value: unknown): value is {
+  question: string;
+  options: string[];
+  answer: string;
+  explanation: string;
+} =>
+  isRecord(value) &&
+  typeof value.question === "string" &&
+  hasStringArray(value.options) &&
+  value.options.length >= 2 &&
+  typeof value.answer === "string" &&
+  typeof value.explanation === "string";
+
+const isExamBatch = (value: unknown): value is Array<{ question: string; options: string[]; answer: string; explanation: string }> =>
+  Array.isArray(value) && value.length > 0 && value.every(isQuizQuestion);
+
+const isVideoAnalysis = (value: unknown): value is {
+  synopsis: string;
+  knowledgePoints: string[];
+  examinerTips: string[];
+  formulaVault: string[];
+} =>
+  isRecord(value) &&
+  typeof value.synopsis === "string" &&
+  hasStringArray(value.knowledgePoints) &&
+  hasStringArray(value.examinerTips) &&
+  hasStringArray(value.formulaVault);
+
+const isMockPaper = (
+  value: unknown
+): value is Array<{ number: number; text: string; marks: number; parts?: Array<{ label: string; text: string; marks: number }> }> =>
+  Array.isArray(value) &&
+  value.every(
+    (question) =>
+      isRecord(question) &&
+      typeof question.number === "number" &&
+      typeof question.text === "string" &&
+      typeof question.marks === "number" &&
+      (question.parts === undefined ||
+        (Array.isArray(question.parts) &&
+          question.parts.every(
+            (part) =>
+              isRecord(part) &&
+              typeof part.label === "string" &&
+              typeof part.text === "string" &&
+              typeof part.marks === "number"
+          )))
+  );
 
 export const getStudyPlan = async (mockGrades: string) =>
   requestGemini<string>(
@@ -55,7 +185,9 @@ export const generateQuizQuestion = async (topic: string, difficulty: string = "
     `Generate a ${difficulty} difficulty multiple-choice A-Level Math question for Edexcel IAL on "${topic}".
 Return JSON with keys: question, options (string[]), answer, explanation.
 IMPORTANT: No LaTeX and no Markdown.`,
-    true
+    true,
+    quizQuestionSchema,
+    isQuizQuestion
   );
 
 export const generateExamBatch = async (topic: string, difficulty: string = "Medium", count: number = 5) =>
@@ -63,7 +195,9 @@ export const generateExamBatch = async (topic: string, difficulty: string = "Med
     "gemini-2.0-flash",
     `Generate exactly ${count} different ${difficulty} A-Level Math multiple-choice questions on "${topic}".
 Return a JSON array. Each item must have question, options (string[]), answer, explanation.`,
-    true
+    true,
+    examBatchSchema,
+    isExamBatch
   );
 
 export const getTopicSummary = async (topic: string) =>
@@ -74,7 +208,9 @@ export const getVideoAnalysis = async (chapterTitle: string, topics: string[]) =
     "gemini-2.0-flash",
     `Analyze educational content for "${chapterTitle}" with topics: ${topics.join(", ")}.
 Return JSON with keys: synopsis, knowledgePoints (string[]), examinerTips (string[]), formulaVault (string[]).`,
-    true
+    true,
+    videoAnalysisSchema,
+    isVideoAnalysis
   );
 
 export const getTutorChatResponse = async (topic: string, history: any[], userMessage: string) =>
@@ -111,5 +247,7 @@ export const generateMockPaper = async (paperTitle: string) =>
     "gemini-2.0-flash",
     `Create a mock exam paper for "${paperTitle}".
 Return a JSON array. Each item should have: number (number), text (string), marks (number), and optional parts (array of {label, text, marks}).`,
-    true
+    true,
+    { type: "ARRAY", items: mockPaperQuestionSchema },
+    isMockPaper
   );
